@@ -1,0 +1,57 @@
+name: Sync IEAT e-Monitoring to ArcGIS Online
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # ทุก 1 ชั่วโมง ที่นาที 17
+    - cron: "17 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ieat-emonitoring-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download and clean IEAT data
+        run: python update_station.py
+
+      - name: Synchronize ArcGIS Online
+        env:
+          ARCGIS_USERNAME: ${{ secrets.ARCGIS_USERNAME }}
+          ARCGIS_PASSWORD: ${{ secrets.ARCGIS_PASSWORD }}
+          ARCGIS_ITEM_ID: ${{ secrets.ARCGIS_ITEM_ID }}
+        run: python sync_arcgis.py
+
+      - name: Commit latest GeoJSON
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add station.geojson
+
+          if git diff --cached --quiet; then
+            echo "No GeoJSON changes"
+          else
+            git commit -m "Update IEAT e-Monitoring GeoJSON"
+            git push
+          fi
